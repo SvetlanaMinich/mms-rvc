@@ -3,12 +3,11 @@ import json
 import time
 import numpy as np
 
-import scipy.io.wavfile as wavfile
 import io
-from scipy import signal
 import soundfile as sf
 import librosa    
 
+import GPUtil
 
 from mms_tts import MmsModels
 
@@ -39,8 +38,16 @@ async def text_to_speech(tts: MmsModels,
         except Exception:
             print(f'Cannot download model for {language} language')
             return
-        
-    result_array, sample_rate = tts_func(text=text) 
+    
+    gpus = GPUtil.getGPUs()
+    for gpu in gpus:
+        print(f'        > GPU ID: {gpu.id}, Load: {gpu.load * 100}%')
+
+    result_array, sample_rate = tts_func(text=text, device="cuda:0") 
+
+    gpus = GPUtil.getGPUs()
+    for gpu in gpus:
+        print(f'        > GPU ID: {gpu.id}, Load: {gpu.load * 100}%')
 
     result_array = result_array.astype(np.float32) / np.max(np.abs(result_array))
 

@@ -1,7 +1,9 @@
 socketify
 # apt install libuv1 zlib1g
-# transformers
-# accelerate
+transformers
+accelerate
 uroman
 numpy
 scipy
+# python3.10
+infer_rvc_python
