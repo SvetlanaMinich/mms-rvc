@@ -2,22 +2,29 @@ import asyncio
 import json
 import time
 import numpy as np
+
 import scipy.io.wavfile as wavfile
 import io
+from scipy import signal
+import soundfile as sf
+import librosa    
+
 
 from mms_tts import MmsModels
-from WebsocketLocal import WSLocal
 
 from socketify import App, AppListenOptions, CompressOptions, WebSocket
 
 PORT = 8081 
 HOST = '0.0.0.0'
 
+ws_count = 0
+
 ws_queues = {}
 ws_results = {}
 msg_count = {}
 
 websocket_instances = {}
+
 
 async def text_to_speech(tts: MmsModels,
                          text: str,
@@ -33,16 +40,23 @@ async def text_to_speech(tts: MmsModels,
             print(f'Cannot download model for {language} language')
             return
         
-    result_ndarray, sample_rate = tts_func(text=text) 
+    result_array, sample_rate = tts_func(text=text) 
 
-    print('tts done in tts')
-    # sample_rate = 16000  # Target sample rate (Hz)
+    result_array = result_array.astype(np.float32) / np.max(np.abs(result_array))
 
-    result_scaled = np.int16(result_ndarray * 32767)
+    resampled_array = librosa.resample(result_array, orig_sr=sample_rate, target_sr=16000)
+
+    sample_rate = 16000
+    result_scaled = np.int16(resampled_array * 32767)
     wav_buffer = io.BytesIO()
-    wavfile.write(wav_buffer, sample_rate, result_scaled)
-        
-    return wav_buffer.getvalue()  
+    sf.write(wav_buffer, result_scaled, 16000, format='WAV')
+    wav_bytes = wav_buffer.getvalue()
+
+    num_samples = len(result_scaled)
+    duration_seconds = (num_samples / sample_rate) * 1000
+    print('     > duration:', duration_seconds)
+
+    return wav_bytes 
 
 
 async def process_tts_requests(tts: MmsModels,
@@ -58,10 +72,9 @@ async def process_tts_requests(tts: MmsModels,
         res_in_bytes = await text_to_speech(tts=tts,
                                             text=text,
                                             language=language)
-        
-        res_in_bytes = res_in_bytes[44:]
-
         print(f'    > {time.time() - start}: {text}')
+
+        res_in_bytes = res_in_bytes[44:]
         
         await result_queue.put((msg_id, res_in_bytes))
         queue.task_done() 
@@ -77,10 +90,14 @@ async def send_results(ws: WebSocket, client_id: str):
         print(f'RECEIVED NUMBER {msg_id}')
 
         if msg_id == expected_id:
+            if ws.ws not in websocket_instances:
+                break
             ws.send(res_in_bytes)
             print(f"Result {len(res_in_bytes)} sent to client {client_id}, msg_id: {msg_id}")
             expected_id += 1
         if expected_id in buf.keys():
+            if ws.ws not in websocket_instances:
+                break
             ws.send(buf[expected_id])
             print(f"Result {len(buf[expected_id])} sent to client {client_id}, msg_id: {msg_id}")
             expected_id += 1
@@ -100,9 +117,11 @@ async def handle_tts(ws:WebSocket,
         print(f'CLIENT {client_id} HERE\nData from client {client_id} received: {header["Text"]}, {header["Language"]}')
 
         if client_id not in ws_queues.keys():
+            websocket_instances[ws.ws] = client_id
             ws_queues[client_id] = asyncio.Queue()
             ws_results[client_id] = asyncio.Queue()
             msg_count[client_id] = 0
+
             asyncio.create_task(process_tts_requests(tts=tts, ws=ws, client_id=client_id))
             asyncio.create_task(send_results(ws=ws, client_id=client_id))
 
@@ -115,16 +134,18 @@ async def handle_tts(ws:WebSocket,
 
 
 def on_open(ws: WebSocket):
-    new_ws = WSLocal()
-    websocket_instances[ws] = new_ws
-    print(f'WebSocket {new_ws.get_id()} opened')
+    websocket_instances[ws.ws] = ''
+    print(f"WebSocket {ws.ws} opened")
 
 
-def on_close(ws: WebSocket):
-    if ws in websocket_instances.keys():
-        ws_instance = websocket_instances.pop(ws)  # Удаляем инстанс при закрытии
-        closed_ws_id = ws_instance.on_close()
-        print(f'WebSocket {closed_ws_id} closed')
+def on_close(ws: WebSocket, code, msg):
+    if ws.ws in websocket_instances.keys():
+        client_id = websocket_instances.pop(ws.ws)
+        ws_results.pop(client_id)
+        msg_count.pop(client_id)
+        ws_queues.pop(client_id)
+        print(f"Client {client_id} removed")
+        print(f"WebSocket {ws.ws} closed")
     else:
         print('WebSocket closed, but not in storage')
 
@@ -137,10 +158,10 @@ def run_server_tts():
                 "compression": CompressOptions.SHARED_COMPRESSOR,
                 "max_payload_length": 16 * 1024 * 1024,
                 "idle_timeout": 960, 
-                "open": lambda ws: on_open(ws),
+                "open": on_open,
                 "message": lambda ws, msg, opcode: asyncio.create_task(
                         handle_tts(ws, msg, tts)),
-                "close": lambda ws, code, msg: on_close(ws)
+                "close": on_close
             })
     app.listen(AppListenOptions(PORT, HOST), lambda config: print(f"Listening on port {config.port}"))
     app.run()

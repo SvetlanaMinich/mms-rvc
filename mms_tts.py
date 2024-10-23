@@ -10,6 +10,7 @@ from transformers import VitsModel, AutoTokenizer
 from infer_rvc_python import BaseLoader
 import torch
 import os
+import numpy as np
 
 models_dir = 'models'
 
@@ -90,17 +91,19 @@ class MmsModels:
         self.tokenizer_kan = AutoTokenizer.from_pretrained("facebook/mms-tts-kan", cache_dir=models_dir)
         self.model_kan.to(self.device).eval()
 
-        self.model_zlm = VitsModel.from_pretrained("facebook/mms-tts-zlm",cache_dir=models_dir)
-        self.tokenizer_zlm = AutoTokenizer.from_pretrained("facebook/mms-tts-zlm", cache_dir=models_dir)
-        self.model_zlm.to(self.device).eval()
+        # self.model_zlm = VitsModel.from_pretrained("facebook/mms-tts-zlm",cache_dir=models_dir)
+        # self.tokenizer_zlm = AutoTokenizer.from_pretrained("facebook/mms-tts-zlm", cache_dir=models_dir)
+        # self.model_zlm.to(self.device).eval()
+
+        # mkn	Malay, Kupang
 
         self.tts_eng("Preloading the model once, as you've shown")
 
     
     def voice_conv(self, out_array):
-        data = (out_array, 16_000)
+        waveform_int16 = np.int16(out_array * 32767)
         result_array, sample_rate = self.converter.generate_from_cache(
-            audio_data=data,
+            audio_data=(waveform_int16, 16_000),
             tag=self.converter_tag,
         )
         return result_array, sample_rate
@@ -110,88 +113,88 @@ class MmsModels:
         inputs = self.tokenizer_urd(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_urd(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
 
     def tts_eng(self, text):
         inputs = self.tokenizer_eng(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_eng(**inputs.to(self.device))
-        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())        
 
     def tts_ara(self, text):
         inputs = self.tokenizer_arab(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_arab(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
 
     def tts_deu(self, text):
         inputs = self.tokenizer_deu(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_deu(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
 
     def tts_rus(self, text):
         inputs = self.tokenizer_rus(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_rus(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
     
     def tts_hin(self, text):
         inputs = self.tokenizer_hin(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_hin(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
     
     def tts_ben(self, text):
         inputs = self.tokenizer_ben(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_ben(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
     
     def tts_mya(self, text):
         inputs = self.tokenizer_mya(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_mya(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
     
     def tts_nld(self, text):
         inputs = self.tokenizer_nld(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_nld(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
     
     def tts_fin(self, text):
         inputs = self.tokenizer_fin(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_fin(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
     
     def tts_heb(self, text):
         inputs = self.tokenizer_heb(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_heb(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
     
     def tts_ind(self, text):
         inputs = self.tokenizer_ind(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_ind(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
     
     def tts_spa(self, text):
         inputs = self.tokenizer_spa(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_spa(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
     
     def tts_kan(self, text):
         inputs = self.tokenizer_kan(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_kan(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
     
     def tts_zlm(self, text):
         inputs = self.tokenizer_zlm(text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model_zlm(**inputs.to(self.device))
-        return outputs.waveform[0].cpu().float().numpy()
+        return self.voice_conv(outputs.waveform[0].cpu().float().numpy())
