@@ -1,0 +1,7 @@
+socketify
+# apt install libuv1 zlib1g
+# transformers
+# accelerate
+uroman
+numpy
+scipy
