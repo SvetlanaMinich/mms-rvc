@@ -1,8 +1,9 @@
 from transformers import VitsModel, AutoTokenizer
-from infer_rvc_python import BaseLoader
 import torch
-import os
+
+from scipy.io.wavfile import write
 import numpy as np
+from TTS.api import TTS
 
 models_dir = 'models'
 
@@ -10,32 +11,31 @@ models_dir = 'models'
 class MmsModels:
     def __init__(self, devices=['cuda:0']) -> None:
         self.models_dir = 'models'
-        # Load models and tokenizers for each device
         self.models = {}
         self.tokenizers = {}
-        self.converters = {}
-        self.converter_tag = "marasov"
+        self.vc = {}
+
+        # self.converter_tag = "masarov"
+
+        # self.converter = BaseLoader(only_cpu=False, hubert_path='hubert_base.pt', rmvpe_path='rmvpe.pt')
+        # self.converter.apply_conf(
+        #         tag="masarov",
+        #         file_model="voice_models/masarov/MaraSov_e600_s3600.pth",
+        #         pitch_algo="rmvpe+",
+        #         pitch_lvl=0,
+        #         file_index="voice_models/masarov/added_IVF290_Flat_nprobe_1_MaraSov_v2.index",
+        #         index_influence=0.66,
+        #         respiration_median_filtering=3,
+        #         envelope_ratio=0.25,
+        #         consonant_breath_protection=0.33
+        #     )
 
         for device in devices:
             if not torch.cuda.is_available() and device.startswith("cuda"):
                 print(f"{device} is not available. Skipping...")
                 continue
             
-            # Initialize and configure the converter for each device
-            self.converters[device] = BaseLoader(only_cpu=False, hubert_path='hubert_base.pt', rmvpe_path='rmvpe.pt')
-            self.converters[device].apply_conf(
-                tag="marasov",
-                file_model="voice_models/masarov/MaraSov_e600_s3600.pth",
-                pitch_algo="rmvpe+",
-                pitch_lvl=0,
-                file_index="voice_models/masarov/added_IVF290_Flat_nprobe_1_MaraSov_v2.index",
-                index_influence=0.66,
-                respiration_median_filtering=3,
-                envelope_ratio=0.25,
-                consonant_breath_protection=0.33,
-                device=device  # Use the current device for the converter
-            )
-
+            self.vc[device] = TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24").to(device)
             # Load models
             self.models[device] = {
                 "urd": VitsModel.from_pretrained("facebook/mms-tts-urd-script_arabic", cache_dir=self.models_dir).to(device).eval(),
@@ -72,25 +72,29 @@ class MmsModels:
                 "kan": AutoTokenizer.from_pretrained("facebook/mms-tts-kan", cache_dir=self.models_dir),
             }
 
-            self.tts_eng("Preloading the model once, as you've shown", device=device)
-
     
-    def voice_conv(self, out_array, device):
-        waveform_int16 = np.int16(out_array * 32767)
-        result_array, sample_rate = self.converters[device].generate_from_cache(
-            audio_data=(waveform_int16, 16_000),
-            tag=self.converter_tag,
-        )
-        return result_array, sample_rate
+    # def voice_conv(self, out_array, device=None):
+    #     waveform_int16 = np.int16(out_array * 32767)
+    #     result_array, sample_rate = self.converter.generate_from_cache(
+    #         audio_data=(waveform_int16, 16_000),
+    #         tag=self.converter_tag,
+    #     )
+    #     return result_array, sample_rate
+
+    def voice_conversion(self, out, device):
+        scaled_waveform = np.int16(out / np.max(np.abs(out)) * 32767)
+        sample_rate = 16000
+        write("output.wav", sample_rate, scaled_waveform)
+        wav = self.vc[device].voice_conversion(source_wav="output.wav",
+                                               target_wav='def_male.wav')
+        return wav
 
     def tts(self, text, lang, device):
-        if lang not in self.tokenizers[device]:
-            raise ValueError(f"Language '{lang}' is not supported on device '{device}'.")
-
         inputs = self.tokenizers[device][lang](text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.models[device][lang](**inputs.to(device))
-        return self.voice_conv(outputs.waveform[0].cpu().float().numpy(), device)
+        return self.voice_conversion(out=outputs.waveform[0].cpu().float().numpy(),
+                                     device=device)
 
     def tts_urd(self, text, device):
         return self.tts(text, "urd", device)

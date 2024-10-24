@@ -6,4 +6,4 @@ uroman
 numpy
 scipy
 # python3.10
-infer_rvc_python
+gputils

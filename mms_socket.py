@@ -5,7 +5,7 @@ import numpy as np
 
 import io
 import soundfile as sf
-import librosa    
+import librosa
 
 import GPUtil
 
@@ -15,6 +15,7 @@ from socketify import App, AppListenOptions, CompressOptions, WebSocket
 
 PORT = 8081 
 HOST = '0.0.0.0'
+DEVICES = ['cuda:0']
 
 ws_count = 0
 
@@ -25,42 +26,46 @@ msg_count = {}
 websocket_instances = {}
 
 
+async def get_least_loaded_device():
+        gpus = GPUtil.getGPUs()
+        load = {gpu.id: gpu.load for gpu in gpus}
+
+        least_loaded_device = min(load, key=load.get)
+        return least_loaded_device
+
+
 async def text_to_speech(tts: MmsModels,
                          text: str,
+                         msg_id: int,
+                         client_id: str,
                          language: str = 'eng'):
+    result_queue = ws_results[client_id]
+
+    start = time.time()
     func_name = f'tts_{language}'
     tts_func = getattr(tts, func_name, None)
     
-    if not tts_func:
-        try:
-            func_name = tts.load_model(lang=language)
-            tts_func = getattr(tts, func_name, None)
-        except Exception:
-            print(f'Cannot download model for {language} language')
-            return
-    
-    gpus = GPUtil.getGPUs()
-    for gpu in gpus:
-        print(f'        > GPU ID: {gpu.id}, Load: {gpu.load * 100}%')
+    device_id = await get_least_loaded_device()
+    print(device_id)
 
-    result_array, sample_rate = tts_func(text=text, device="cuda:0") 
-
-    gpus = GPUtil.getGPUs()
-    for gpu in gpus:
-        print(f'        > GPU ID: {gpu.id}, Load: {gpu.load * 100}%')
+    result_array = tts_func(text=text, device=f"cuda:{device_id}") 
 
     result_array = result_array.astype(np.float32) / np.max(np.abs(result_array))
 
-    resampled_array = librosa.resample(result_array, orig_sr=sample_rate, target_sr=16000)
+    resampled_array = librosa.resample(result_array, orig_sr=22050, target_sr=16000)
 
-    sample_rate = 16000
     result_scaled = np.int16(resampled_array * 32767)
     wav_buffer = io.BytesIO()
     sf.write(wav_buffer, result_scaled, 16000, format='WAV')
     wav_bytes = wav_buffer.getvalue()
 
+    print(f'    > Time: {time.time() - start}')
+
+    # wav_bytes = wav_bytes[44:]
+    await result_queue.put((msg_id, wav_bytes))
+
     num_samples = len(result_scaled)
-    duration_seconds = (num_samples / sample_rate) * 1000
+    duration_seconds = (num_samples / 16_000) * 1000
     print('     > duration:', duration_seconds)
 
     return wav_bytes 
@@ -70,20 +75,16 @@ async def process_tts_requests(tts: MmsModels,
                                ws: WebSocket,
                                client_id: str):
     queue = ws_queues[client_id]
-    result_queue = ws_results[client_id]
     while True:
         # Wait for a request from the queue
         text, language, msg_id = await queue.get()
 
-        start = time.time()
-        res_in_bytes = await text_to_speech(tts=tts,
-                                            text=text,
-                                            language=language)
-        print(f'    > {time.time() - start}: {text}')
+        await text_to_speech(tts=tts,
+                             text=text,
+                             language=language,
+                             msg_id=msg_id,
+                             client_id=client_id)
 
-        res_in_bytes = res_in_bytes[44:]
-        
-        await result_queue.put((msg_id, res_in_bytes))
         queue.task_done() 
 
 
@@ -158,7 +159,7 @@ def on_close(ws: WebSocket, code, msg):
 
 
 def run_server_tts():
-    tts = MmsModels()
+    tts = MmsModels(devices=DEVICES)
     
     app = App()
     app.ws('/', {
