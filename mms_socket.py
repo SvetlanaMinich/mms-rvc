@@ -5,13 +5,13 @@ import numpy as np
 
 import io
 import soundfile as sf
-import librosa
+import base64 
 
 import GPUtil
 
 from mms_tts import MmsModels
 
-from socketify import App, AppListenOptions, CompressOptions, WebSocket
+from socketify import App, AppListenOptions, CompressOptions, WebSocket, OpCode
 
 PORT = 8081 
 HOST = '0.0.0.0'
@@ -38,6 +38,7 @@ async def text_to_speech(tts: MmsModels,
                          text: str,
                          msg_id: int,
                          client_id: str,
+                         request_id: str,
                          language: str = 'eng'):
     result_queue = ws_results[client_id]
 
@@ -50,22 +51,18 @@ async def text_to_speech(tts: MmsModels,
 
     result_array = tts_func(text=text, device=f"cuda:{device_id}") 
 
-    result_array = result_array.astype(np.float32) / np.max(np.abs(result_array))
-
-    resampled_array = librosa.resample(result_array, orig_sr=22050, target_sr=16000)
-
-    result_scaled = np.int16(resampled_array * 32767)
+    sample_rate = 16000
+    result_scaled = np.int16(result_array * 32767)
     wav_buffer = io.BytesIO()
     sf.write(wav_buffer, result_scaled, 16000, format='WAV')
     wav_bytes = wav_buffer.getvalue()
 
     print(f'    > Time: {time.time() - start}')
-
-    # wav_bytes = wav_bytes[44:]
-    await result_queue.put((msg_id, wav_bytes))
+    wav_bytes = wav_bytes[44:]
+    await result_queue.put((msg_id, wav_bytes, request_id))
 
     num_samples = len(result_scaled)
-    duration_seconds = (num_samples / 16_000) * 1000
+    duration_seconds = (num_samples / sample_rate) * 1000
     print('     > duration:', duration_seconds)
 
     return wav_bytes 
@@ -77,13 +74,14 @@ async def process_tts_requests(tts: MmsModels,
     queue = ws_queues[client_id]
     while True:
         # Wait for a request from the queue
-        text, language, msg_id = await queue.get()
+        text, language, request_id, msg_id = await queue.get()
 
         await text_to_speech(tts=tts,
                              text=text,
                              language=language,
                              msg_id=msg_id,
-                             client_id=client_id)
+                             client_id=client_id,
+                             request_id=request_id)
 
         queue.task_done() 
 
@@ -94,23 +92,28 @@ async def send_results(ws: WebSocket, client_id: str):
     buf = {}
 
     while True:
-        msg_id, res_in_bytes = await result_queue.get()
+        msg_id, res_in_bytes, request_id = await result_queue.get()
         print(f'RECEIVED NUMBER {msg_id}')
+
+        result = {
+            "RequestId": request_id,
+            "Audio": base64.b64encode(res_in_bytes).decode('utf-8')
+        }
 
         if msg_id == expected_id:
             if ws.ws not in websocket_instances:
                 break
-            ws.send(res_in_bytes)
-            print(f"Result {len(res_in_bytes)} sent to client {client_id}, msg_id: {msg_id}")
+            ws.send(result)
+            print(f"Result {len(result['Audio'])} sent to client {client_id}, msg_id: {msg_id}")
             expected_id += 1
         if expected_id in buf.keys():
             if ws.ws not in websocket_instances:
                 break
             ws.send(buf[expected_id])
-            print(f"Result {len(buf[expected_id])} sent to client {client_id}, msg_id: {msg_id}")
+            print(f"Result {len(buf[expected_id]['Audio'])} sent to client {client_id}, msg_id: {msg_id}")
             expected_id += 1
         if msg_id != expected_id and msg_id not in buf.keys():
-            buf[msg_id] = res_in_bytes
+            buf[msg_id] = result
 
         result_queue.task_done()
         
@@ -121,7 +124,8 @@ async def handle_tts(ws:WebSocket,
                      tts:MmsModels):               
     try:
         header = json.loads(msg.decode('utf-8'))
-        client_id = header['Client_id']
+        client_id = header['ClientId']
+        request_id = header['RequestId']
         print(f'CLIENT {client_id} HERE\nData from client {client_id} received: {header["Text"]}, {header["Language"]}')
 
         if client_id not in ws_queues.keys():
@@ -134,7 +138,7 @@ async def handle_tts(ws:WebSocket,
             asyncio.create_task(send_results(ws=ws, client_id=client_id))
 
         msg_id = msg_count[client_id]
-        await ws_queues[client_id].put((header['Text'], header['Language'], msg_id))
+        await ws_queues[client_id].put((header['Text'], header['Language'], request_id, msg_id))
         msg_count[client_id] += 1
 
     except Exception as ex:

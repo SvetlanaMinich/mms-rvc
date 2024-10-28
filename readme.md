@@ -1,6 +1,13 @@
 pip install socketify
 apt install libuv1 zlib1g
 
+recv dict = {
+    "Text":...,
+    "Language":...,
+    "ClientId":...,
+    "RequestId":...
+}
+
 ru_test = ['Маленький человек в дырявом желтом котелке и с грушевидным малиновым носом.',
     'В клетчатых брюках и лакированных ботинках выехал на сцену на обыкновенном двухколесном велосипеде.', 
     'Под звуки фокстрота он сделал круг.', 
@@ -342,7 +349,7 @@ ind_test = [
 8.⁠ ⁠Finnish [fin]                      mms-tts
 9.⁠ ⁠German [deu]                       2 голоса м и ж в mms-tts 
 10.⁠ ⁠Hebrew [heb]                      2 мужских голоса в mms-tts
-11.⁠ ⁠Hindi [hin]                       https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale 
+11.⁠ ⁠Hindi [hin]                       https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale  (ЗАПУСТИТЬ НА ГПУ)
 12.⁠ ⁠Indonesia (Bahasa Indonesia) [ind] mms-tts + шумы
 13.⁠ ⁠Spanish [spa]                     mms-tts
 14.⁠ ⁠Kannada [kan]                     mms-tts
@@ -373,3 +380,38 @@ hindi:
         > time: 1.4812061786651611
         > time: 1.0772275924682617
         > time: 1.220931053161621
+
+
+**installing all for sockets (python3.10):**
+1. activate env with model you need
+2. pip install -r requirements.txt
+3. apt install libuv1 zlib1g
+4. run script
+
+
+**installing styletts2 for eng (https://github.com/sidharthrajaram/StyleTTS2, python 3.10):**
+1. python3.10 -m venv styletts_venv
+2. source styletts_venv/bin/activate
+3. mkdir libritts
+4. cd libritts
+5. wget https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml
+6. wget https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth
+7. cd ..
+8. pip install styletts2
+9. run script styletts_try.py (need to run first inference while downloading model)
+
+
+**installing mms-tts (https://huggingface.co/facebook/mms-tts-ben, python3.10):**
+1. python3.10 -m venv mmstts_venv
+2. source mmstts_venv/bin/activate
+3. pip install --upgrade transformers accelerate
+4. run script
+
+
+**installing vits-tts fro hindi (https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale, python3.10)**
+1. activate python env
+2. wget https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale/resolve/main/chars.txt
+3. wget https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale/resolve/main/extra.py
+4. wget https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale/resolve/main/hi_male_vits_30hrs.pt
+5. wget https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale/resolve/main/jit_infer.py
+6. run script hin_infer.py (need to move it to cuda)

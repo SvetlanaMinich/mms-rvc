@@ -1,9 +1,14 @@
 from transformers import VitsModel, AutoTokenizer
 import torch
-
-from scipy.io.wavfile import write
+import soundfile as sf
+import os
 import numpy as np
-from TTS.api import TTS
+from scipy.signal import resample
+
+from styletts2 import tts
+import time
+import nltk
+nltk.download('punkt_tab')
 
 models_dir = 'models'
 
@@ -11,35 +16,19 @@ models_dir = 'models'
 class MmsModels:
     def __init__(self, devices=['cuda:0']) -> None:
         self.models_dir = 'models'
+        # Load models and tokenizers for each device
         self.models = {}
         self.tokenizers = {}
-        self.vc = {}
-
-        # self.converter_tag = "masarov"
-
-        # self.converter = BaseLoader(only_cpu=False, hubert_path='hubert_base.pt', rmvpe_path='rmvpe.pt')
-        # self.converter.apply_conf(
-        #         tag="masarov",
-        #         file_model="voice_models/masarov/MaraSov_e600_s3600.pth",
-        #         pitch_algo="rmvpe+",
-        #         pitch_lvl=0,
-        #         file_index="voice_models/masarov/added_IVF290_Flat_nprobe_1_MaraSov_v2.index",
-        #         index_influence=0.66,
-        #         respiration_median_filtering=3,
-        #         envelope_ratio=0.25,
-        #         consonant_breath_protection=0.33
-        #     )
 
         for device in devices:
             if not torch.cuda.is_available() and device.startswith("cuda"):
                 print(f"{device} is not available. Skipping...")
                 continue
-            
-            self.vc[device] = TTS(model_name="voice_conversion_models/multilingual/vctk/freevc24").to(device)
+
             # Load models
             self.models[device] = {
                 "urd": VitsModel.from_pretrained("facebook/mms-tts-urd-script_arabic", cache_dir=self.models_dir).to(device).eval(),
-                "eng": VitsModel.from_pretrained("facebook/mms-tts-eng", cache_dir=self.models_dir).to(device).eval(),
+                "eng": tts.StyleTTS2(model_checkpoint_path='libritts/epochs_2nd_00020.pth', config_path='libritts/config.yml'),
                 "ara": VitsModel.from_pretrained("facebook/mms-tts-ara", cache_dir=self.models_dir).to(device).eval(),
                 "deu": VitsModel.from_pretrained("facebook/mms-tts-deu", cache_dir=self.models_dir).to(device).eval(),
                 "rus": VitsModel.from_pretrained("facebook/mms-tts-rus", cache_dir=self.models_dir).to(device).eval(),
@@ -57,7 +46,6 @@ class MmsModels:
             # Load tokenizers
             self.tokenizers[device] = {
                 "urd": AutoTokenizer.from_pretrained("facebook/mms-tts-urd-script_arabic", cache_dir=self.models_dir),
-                "eng": AutoTokenizer.from_pretrained("facebook/mms-tts-eng", cache_dir=self.models_dir),
                 "ara": AutoTokenizer.from_pretrained("facebook/mms-tts-ara", cache_dir=self.models_dir),
                 "deu": AutoTokenizer.from_pretrained("facebook/mms-tts-deu", cache_dir=self.models_dir),
                 "rus": AutoTokenizer.from_pretrained("facebook/mms-tts-rus", cache_dir=self.models_dir),
@@ -71,36 +59,22 @@ class MmsModels:
                 "spa": AutoTokenizer.from_pretrained("facebook/mms-tts-spa", cache_dir=self.models_dir),
                 "kan": AutoTokenizer.from_pretrained("facebook/mms-tts-kan", cache_dir=self.models_dir),
             }
-
-    
-    # def voice_conv(self, out_array, device=None):
-    #     waveform_int16 = np.int16(out_array * 32767)
-    #     result_array, sample_rate = self.converter.generate_from_cache(
-    #         audio_data=(waveform_int16, 16_000),
-    #         tag=self.converter_tag,
-    #     )
-    #     return result_array, sample_rate
-
-    def voice_conversion(self, out, device):
-        scaled_waveform = np.int16(out / np.max(np.abs(out)) * 32767)
-        sample_rate = 16000
-        write("output.wav", sample_rate, scaled_waveform)
-        wav = self.vc[device].voice_conversion(source_wav="output.wav",
-                                               target_wav='def_male.wav')
-        return wav
+            
 
     def tts(self, text, lang, device):
         inputs = self.tokenizers[device][lang](text=text, return_tensors="pt")
         with torch.no_grad():
             outputs = self.models[device][lang](**inputs.to(device))
-        return self.voice_conversion(out=outputs.waveform[0].cpu().float().numpy(),
-                                     device=device)
+        return outputs.waveform[0].cpu().float().numpy()
 
     def tts_urd(self, text, device):
         return self.tts(text, "urd", device)
 
     def tts_eng(self, text, device):
-        return self.tts(text, "eng", device)
+        output = self.models[device]["eng"].inference(text, target_voice_path="def_male.wav")
+        num_samples = int(len(output) * (16000 / 24000))  # Calculate the new number of samples
+        output_resampled = resample(output, num_samples)
+        return output_resampled
 
     def tts_ara(self, text, device):
         return self.tts(text, "ara", device)

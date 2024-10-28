@@ -1,13 +1,15 @@
 import os
 from extra import TTSTokenizer, VitsConfig, CharactersConfig, VitsCharacters
+from transformers import VitsModel
 import torch
 import numpy as np
 import time
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 with open("chars.txt", 'r') as f:
     letters = f.read().strip('\n')
+
 model="hi_male_vits_30hrs.pt"
 hin_test = [
     "छोटा आदमी फटे हुए पीले टोपी और नाशपाती जैसी लाल नाक के साथ।",
@@ -44,15 +46,16 @@ config = VitsConfig(
         punctuations="!¡'(),-.:;¿? ",
         phonemes=None)
     )
+
 tokenizer, config = TTSTokenizer.init_from_config(config)
-net = torch.jit.load(model)
+net = VitsModel.from_pretrained(model).to(device).eval()
 
 for i, sen in enumerate(hin_test):
     start = time.time()
     x = tokenizer.text_to_ids(sen)
-    x = torch.from_numpy(np.array(x)).unsqueeze(0)
+    x = torch.from_numpy(np.array(x)).unsqueeze(0).to(device)
     with torch.no_grad():
         out2 = net(x)
     print(f'        > time: {time.time() - start}')
-    import soundfile as sf
-    sf.write(f"hin-{i}.wav", out2.squeeze().cpu().numpy(), 22050)
+    # import soundfile as sf
+    # sf.write(f"hin-{i}.wav", out2.squeeze().cpu().numpy(), 22050)
