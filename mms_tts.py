@@ -1,14 +1,10 @@
 from transformers import VitsModel, AutoTokenizer
 import torch
-import soundfile as sf
-import os
-import numpy as np
 from scipy.signal import resample
 
-from styletts2 import tts
-import time
-import nltk
-nltk.download('punkt_tab')
+from TTS.tts.configs.xtts_config import XttsConfig
+from TTS.tts.models.xtts import Xtts
+model_path = '/root/.local/share/tts/tts_models--multilingual--multi-dataset--xtts_v2/'
 
 models_dir = 'models'
 
@@ -24,15 +20,20 @@ class MmsModels:
             if not torch.cuda.is_available() and device.startswith("cuda"):
                 print(f"{device} is not available. Skipping...")
                 continue
-
+            
+            config = XttsConfig()
+            config.load_json(model_path+"config.json")
+            model = Xtts.init_from_config(config)
+            model.load_checkpoint(config, checkpoint_dir=model_path, use_deepspeed=True)
+            model.to(device)
             # Load models
             self.models[device] = {
                 "urd": VitsModel.from_pretrained("facebook/mms-tts-urd-script_arabic", cache_dir=self.models_dir).to(device).eval(),
-                "eng": tts.StyleTTS2(model_checkpoint_path='libritts/epochs_2nd_00020.pth', config_path='libritts/config.yml'),
+                "eng": model,
                 "ara": VitsModel.from_pretrained("facebook/mms-tts-ara", cache_dir=self.models_dir).to(device).eval(),
-                "deu": VitsModel.from_pretrained("facebook/mms-tts-deu", cache_dir=self.models_dir).to(device).eval(),
+                "deu": model,
                 "rus": VitsModel.from_pretrained("facebook/mms-tts-rus", cache_dir=self.models_dir).to(device).eval(),
-                "hin": VitsModel.from_pretrained("facebook/mms-tts-hin", cache_dir=self.models_dir).to(device).eval(),
+                "hin": model,
                 "ben": VitsModel.from_pretrained("facebook/mms-tts-ben", cache_dir=self.models_dir).to(device).eval(),
                 "mya": VitsModel.from_pretrained("facebook/mms-tts-mya", cache_dir=self.models_dir).to(device).eval(),
                 "nld": VitsModel.from_pretrained("facebook/mms-tts-nld", cache_dir=self.models_dir).to(device).eval(),
@@ -41,15 +42,14 @@ class MmsModels:
                 "ind": VitsModel.from_pretrained("facebook/mms-tts-ind", cache_dir=self.models_dir).to(device).eval(),
                 "spa": VitsModel.from_pretrained("facebook/mms-tts-spa", cache_dir=self.models_dir).to(device).eval(),
                 "kan": VitsModel.from_pretrained("facebook/mms-tts-kan", cache_dir=self.models_dir).to(device).eval(),
+                "mkn": VitsModel.from_pretrained("facebook/mms-tts-mkn", cache_dir=self.models_dir).to(device).eval(),
             }
             
             # Load tokenizers
             self.tokenizers[device] = {
                 "urd": AutoTokenizer.from_pretrained("facebook/mms-tts-urd-script_arabic", cache_dir=self.models_dir),
                 "ara": AutoTokenizer.from_pretrained("facebook/mms-tts-ara", cache_dir=self.models_dir),
-                "deu": AutoTokenizer.from_pretrained("facebook/mms-tts-deu", cache_dir=self.models_dir),
                 "rus": AutoTokenizer.from_pretrained("facebook/mms-tts-rus", cache_dir=self.models_dir),
-                "hin": AutoTokenizer.from_pretrained("facebook/mms-tts-hin", cache_dir=self.models_dir),
                 "ben": AutoTokenizer.from_pretrained("facebook/mms-tts-ben", cache_dir=self.models_dir),
                 "mya": AutoTokenizer.from_pretrained("facebook/mms-tts-mya", cache_dir=self.models_dir),
                 "nld": AutoTokenizer.from_pretrained("facebook/mms-tts-nld", cache_dir=self.models_dir),
@@ -58,8 +58,13 @@ class MmsModels:
                 "ind": AutoTokenizer.from_pretrained("facebook/mms-tts-ind", cache_dir=self.models_dir),
                 "spa": AutoTokenizer.from_pretrained("facebook/mms-tts-spa", cache_dir=self.models_dir),
                 "kan": AutoTokenizer.from_pretrained("facebook/mms-tts-kan", cache_dir=self.models_dir),
+                "mkn": AutoTokenizer.from_pretrained("facebook/mms-tts-mkn", cache_dir=self.models_dir),
             }
-            
+
+    def get_latents(self):
+        print("Computing speaker latents...")
+        gpt_cond_latent, speaker_embedding = self.models['cuda:0'].get_conditioning_latents(audio_path=["def_male.wav"])
+        return (gpt_cond_latent, speaker_embedding)
 
     def tts(self, text, lang, device):
         inputs = self.tokenizers[device][lang](text=text, return_tensors="pt")
@@ -69,9 +74,19 @@ class MmsModels:
 
     def tts_urd(self, text, device):
         return self.tts(text, "urd", device)
+    
+    def tts_mkn(self, text, device):
+        return self.tts(text, "mkn", device)
 
-    def tts_eng(self, text, device):
-        output = self.models[device]["eng"].inference(text, target_voice_path="def_male.wav")
+    def tts_eng(self, text, device, gpt_cond_latent, speaker_embedding):
+        output = self.models[device]["eng"].inference(
+            text,
+            "en",
+            gpt_cond_latent,
+            speaker_embedding,
+            temperature=0.7, # Add custom parameters here
+        )
+        output = torch.tensor(output["wav"]).unsqueeze(0)
         num_samples = int(len(output) * (16000 / 24000))  # Calculate the new number of samples
         output_resampled = resample(output, num_samples)
         return output_resampled
@@ -79,14 +94,34 @@ class MmsModels:
     def tts_ara(self, text, device):
         return self.tts(text, "ara", device)
 
-    def tts_deu(self, text, device):
-        return self.tts(text, "deu", device)
+    def tts_deu(self, text, device, gpt_cond_latent, speaker_embedding):
+        output = self.models[device]["deu"].inference(
+            text,
+            "de",
+            gpt_cond_latent,
+            speaker_embedding,
+            temperature=0.7, # Add custom parameters here
+        )
+        output = torch.tensor(output["wav"]).unsqueeze(0)
+        num_samples = int(len(output) * (16000 / 24000))  # Calculate the new number of samples
+        output_resampled = resample(output, num_samples)
+        return output_resampled
 
     def tts_rus(self, text, device):
         return self.tts(text, "rus", device)
 
-    def tts_hin(self, text, device):
-        return self.tts(text, "hin", device)
+    def tts_hin(self, text, device, gpt_cond_latent, speaker_embedding):
+        output = self.models[device]["hin"].inference(
+            text,
+            "hi",
+            gpt_cond_latent,
+            speaker_embedding,
+            temperature=0.7, # Add custom parameters here
+        )
+        output = torch.tensor(output["wav"]).unsqueeze(0)
+        num_samples = int(len(output) * (16000 / 24000))  # Calculate the new number of samples
+        output_resampled = resample(output, num_samples)
+        return output_resampled
 
     def tts_ben(self, text, device):
         return self.tts(text, "ben", device)
@@ -111,3 +146,6 @@ class MmsModels:
 
     def tts_kan(self, text, device):
         return self.tts(text, "kan", device)
+
+
+mmstts = MmsModels()

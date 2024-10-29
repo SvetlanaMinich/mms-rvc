@@ -347,9 +347,9 @@ ind_test = [
 6.⁠ ⁠Dutch [nld]                        2 женских голоса в mms-tts (?)
 7.⁠ ⁠English [eng]                      styletts2 (звенит голос)
 8.⁠ ⁠Finnish [fin]                      mms-tts
-9.⁠ ⁠German [deu]                       2 голоса м и ж в mms-tts 
+9.⁠ ⁠German [deu]                       xtts-v2 German (de)
 10.⁠ ⁠Hebrew [heb]                      2 мужских голоса в mms-tts
-11.⁠ ⁠Hindi [hin]                       https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale  (ЗАПУСТИТЬ НА ГПУ)
+11.⁠ ⁠Hindi [hin]                       xtts-v2 Hindi (hi)
 12.⁠ ⁠Indonesia (Bahasa Indonesia) [ind] mms-tts + шумы
 13.⁠ ⁠Spanish [spa]                     mms-tts
 14.⁠ ⁠Kannada [kan]                     mms-tts
@@ -389,7 +389,7 @@ hindi:
 4. run script
 
 
-**installing styletts2 for eng (https://github.com/sidharthrajaram/StyleTTS2, python 3.10):**
+<!-- **installing styletts2 for eng (https://github.com/sidharthrajaram/StyleTTS2, python 3.10):**
 1. python3.10 -m venv styletts_venv
 2. source styletts_venv/bin/activate
 3. mkdir libritts
@@ -398,7 +398,7 @@ hindi:
 6. wget https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth
 7. cd ..
 8. pip install styletts2
-9. run script styletts_try.py (need to run first inference while downloading model)
+9. run script styletts_try.py (need to run first inference while downloading model) -->
 
 
 **installing mms-tts (https://huggingface.co/facebook/mms-tts-ben, python3.10):**
@@ -408,10 +408,25 @@ hindi:
 4. run script
 
 
-**installing vits-tts fro hindi (https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale, python3.10)**
-1. activate python env
-2. wget https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale/resolve/main/chars.txt
-3. wget https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale/resolve/main/extra.py
-4. wget https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale/resolve/main/hi_male_vits_30hrs.pt
-5. wget https://huggingface.co/SYSPIN/tts_vits_coquiai_HindiMale/resolve/main/jit_infer.py
-6. run script hin_infer.py (need to move it to cuda)
+**Installing xtts-v2 with deepspeed**
+1. *INSTALLING PYTHON 3.10:*
+2. sudo apt update
+3. sudo apt install software-properties-common -y
+4. sudo add-apt-repository ppa:deadsnakes/ppa
+5. sudo apt update
+6. sudo apt install python3.10 python3.10-venv python3.10-dev
+7. **MAKE VENV WITH PYTHON 3.10**
+8. python3.10 -m venv xtts-venv
+9. source xtts-venv/bin/activate
+10. cd TTS
+11. pip install -U numpy==1.22.0 and so on
+12. pip install deepspeed
+
+**error:**
+Cython.Compiler.Errors.CompileError: spacy/kb.pyx
+**solution:**
+sudo apt-get install build-essential
+pip install --upgrade cython
+pip install -U spacy[ja]
+
+pip install -U torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu124

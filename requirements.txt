@@ -1,11 +1,8 @@
 socketify
-# apt install libuv1 zlib1g
+# apt install libuv1 zlib1g  
+# Do you want to continue? [Y/n] y
 transformers # mms-tts
 accelerate # mms-tts
 uroman # mms-tts
-styletts2
-phonemizer
-numpy
-scipy
 # python3.10
 gputil

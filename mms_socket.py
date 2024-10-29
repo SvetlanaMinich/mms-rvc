@@ -22,6 +22,7 @@ ws_count = 0
 ws_queues = {}
 ws_results = {}
 msg_count = {}
+client_params = {}
 
 websocket_instances = {}
 
@@ -49,7 +50,11 @@ async def text_to_speech(tts: MmsModels,
     device_id = await get_least_loaded_device()
     print(device_id)
 
-    result_array = tts_func(text=text, device=f"cuda:{device_id}") 
+    if language in ['eng', 'deu', 'hin']:
+        params = client_params[client_id]
+        result_array = tts_func(text=text, device=f"cuda:{device_id}", gpt_cond_latent=params[0], speaker_embedding=params[1]) 
+    else:
+        result_array = tts_func(text=text, device=f"cuda:{device_id}") 
 
     sample_rate = 16000
     result_scaled = np.int16(result_array * 32767)
@@ -133,6 +138,7 @@ async def handle_tts(ws:WebSocket,
             ws_queues[client_id] = asyncio.Queue()
             ws_results[client_id] = asyncio.Queue()
             msg_count[client_id] = 0
+            client_params[client_id] = tts.get_latents()
 
             asyncio.create_task(process_tts_requests(tts=tts, ws=ws, client_id=client_id))
             asyncio.create_task(send_results(ws=ws, client_id=client_id))
